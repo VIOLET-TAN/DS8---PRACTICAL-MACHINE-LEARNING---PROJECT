@@ -1,0 +1,147 @@
+---
+title: "DS8-PROJECT-a"
+author: "VIOLET-TAN"
+date: "12/12/2020"
+output: html_document
+---
+
+The goal for this project will be to use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants to predict the manner in which they did the exercise. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways A, B, C, D, E. 
+SUBMITTING REQUIREMENTS
+ 
+ This is the "classe" variable in the training set. 
+ 
+ 1. Use any of the other variables to predict with. 
+ 
+ 2. Create a report describing how to built the model using cross validation
+ 
+ 3. What is the expected out of sample error is, and why it is selected. 
+ 
+ 4. Use the prediction model to predict 20 different test cases.
+ 
+DATA
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: 
+
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. 
+
+ACKNOWLEDGE: The dataset used in this project is a courtesy of “Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers’ Data Classification of Body Postures and Movements”
+
+##LOADING REQUIRED PACKAGES
+```{r}
+#install.packages(caret,dependencies = c("depends", "suggests"))
+#library(mlbench)
+library(data.table)
+library(rpart)
+library(rpart.plot)
+library(lattice)
+library(ggplot2)
+library(corrplot)
+library(plyr)
+library(survival)
+library(gbm)
+library(randomForest)
+library(caret)
+#library(rattle)
+```
+
+## LOADING DATA FROM DATA SOURCE
+
+```{r DATA LOADING}
+pmltrain <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", header= TRUE)
+pmltest <- read.csv("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", header=TRUE)
+
+```
+
+## DATA CLEANING AND EXPLORING
+
+```{r DATA CLEANING}
+dim(pmltrain)
+dim(pmltest)
+# There are 19622 observations and 160 variables in the Training dataset while 20 observations and 160 variables in testing dataset
+sum(is.na(pmltrain))
+sum(is.na(pmltest))
+# Getting rid of unrelated and near zero variable(NZV)
+trainingset <- pmltrain[, colSums(is.na(pmltrain)) == 0]
+testingset <- pmltest[, colSums(is.na(pmltest)) == 0]
+trainingset <- trainingset[, -c(1:7)]
+testingset <- testingset[, -c(1:7)]
+dim(trainingset)
+dim(testingset)
+set.seed(1111) 
+inTrain <- createDataPartition(trainingset$classe, p = 0.8, list = FALSE)
+trainData <- trainingset[inTrain, ]
+testData <- trainingset[-inTrain, ]
+dim(trainData)
+dim(testData)
+NZV <- nearZeroVar(trainData)
+trainData <- trainData[, -NZV]
+testData  <- testData[, -NZV]
+dim(trainData)
+dim(testData)
+```
+
+## MODEL SELECTION
+
+    It is determined that this is a classification problem and the goal of the below comparison is to discover which algorithm suits the data better.
+    **A decision tree(dt) is a simple, decision making-diagram.
+    **Random forests are a large number of trees, combined (using averages or "majority rules") at the end of the process.
+    **Gradient boosting machines(gbm) also combine decision trees, but start the combining process at the beginning, instead of at the end.
+    The Kappa metric is selected as the comparison criteria.
+    To reduce the risk of overfitting, a 10-fold cross validation is employed during model building. (Refer to lectures and [2])
+    
+## Model Comparison
+```{r MODEL COMPARISON}
+# k-fold validation - 10-fold validation, use kappa as metric
+set.seed(1111)
+fitControl <- trainControl(method = "cv",
+                           number = 10)
+gbmFit <- train(classe~., data=trainData, method="gbm", metric="Kappa", trControl=fitControl,verbose=FALSE)
+rfFit <- train(classe~., data=trainData, method="rf", metric="Kappa", trControl=fitControl)
+dtFit <- train(classe~., data=trainData, method="rpart", metric="Kappa", trControl=fitControl)
+
+```
+
+#Model Selection
+
+    The models are then compared using the resamples function from the Caret package.
+    Based on the plot below, it can be determined that the RandomForest algorithm performs better than the dt and gbm algorithm for this dataset, achieving a Kappa mean value of 0.9961. It can also be seen that the RandomForest algorithm also displays less spread than Gradient Boosting.
+    Therefore, the RandomForest model is selected for this dataset.
+```{r MODEL SELECTION}
+reValues <- resamples(list(rf=rfFit,gbm=gbmFit, dt=dtFit))
+summary(reValues)
+bwplot(reValues,metric="Kappa",main="RandomForest, GBM, DecisionTree")
+```
+
+## MODEL VALIDATION
+
+1. using the selected RandomForest model for model validation.
+2. The details of the selected model is shown below.
+```{r MODEL VALIDATION 1}
+rfFit
+```
+
+3. Using the confusionMatrix function in the Caret package to validate the selected model with the testData set. The corresponding statistics and error rates are shown.
+```{r MODEL VALIDATION 2 }
+confusionMatrix(as.factor(testData$classe), predict(rfFit,testData))
+```
+
+4. From the above validation result, it can be determined that the selected Model performs at a Kappa value of 0.9961, with an accuracy of 0.9969.
+
+## FINAL MODEL TESTING
+```{r MODEL TESTING}
+#1. Finally, using the selected model to predict the classification of the testing set provided. In addition, in accordance to submission instructions, the pml_write_files function is used to generate submission files.
+testresults <- predict(rfFit, newdata=testingset)
+print(as.data.frame(testresults))
+```
+
+##References
+[1] https://topepo.github.io/caret/featureselection.html
+[2] https://topepo.github.io/caret/training.html
